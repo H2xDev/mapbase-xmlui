@@ -1,8 +1,7 @@
 IncludeScript("xmlui/xml");
 
 local DefinedPanels = {};
-local ElementMappings = {
-};
+local ElementMappings = {};
 
 local CUBIC_BEZIER_REGEX = regexp("cubic-bezier\\((?:\\s+)?([\\d\\.\\-]+)(?:\\s+)?,(?:\\s+)?([\\d\\.\\-]+)(?:\\s+)?,(?:\\s+)?([\\d\\.\\-]+)(?:\\s+)?,(?:\\s+)?([\\d\\.\\-]+)(?:\\s+)?\\)")
 
@@ -446,7 +445,7 @@ function XMLUI::DefinePanel(element, parentPanel = null) {
 		DefinePanel(child, panel);
 	}
 
-	if ("SetCallback" in panel == false || element.type == "tween") return;
+	if ("SetCallback" in panel == false) return;
 
 	local self = this;
 

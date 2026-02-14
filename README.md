@@ -6,7 +6,7 @@ Zero-dependency XML-based VGUI wrapper for Mapbase for creating complex UI eleme
 
 1. Create a folder in `scripts/vscripts` called `xmlui` and place files from this repository there.
 
-2. In `mapspawn.nut` include xml_ui.nut
+2. In `mapspawn.nut` include `xml_ui.nut`
 ```nut
 if (CLIENT_DLL) {
 	IncludeScript("xmlui/xml_ui");
@@ -36,7 +36,7 @@ if (CLIENT_DLL) {
 ```
 
 ## Supported elements
-|element name|description|
+|Element|Description|
 |---|---|
 |`<panel>`|Default element. Can be used as a container for other elements.|
 |`<label>`|A label element for displaying text.|
@@ -45,7 +45,7 @@ if (CLIENT_DLL) {
 ## Supported attributes
 
 ### General attributes
-|attribute name|description|
+|Attribute|Description|
 |---|---|
 |`name`|The name of the element. Mostly used for debug.|
 |`x`|The x position of the element. Can be in pixels or percentage.|
@@ -61,13 +61,13 @@ if (CLIENT_DLL) {
 
 
 ### Label attributes
-|attribute name|description|
+|Attribute|Description|
 |---|---|
 |`text`|The text of the label element.|
 |`font`|The font of the label element.|
 
 ### Tween attributes
-|attribute name|description|
+|Attribute|Description|
 |---|---|
 |`prop`|The property to animate. Can be any of the general attributes or `text` for label elements.|
 |`to`|The value to animate to. Can be in pixels or percentage for position and size properties, hex format for color properties, and string for text property.|

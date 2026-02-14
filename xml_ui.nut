@@ -460,5 +460,3 @@ function XMLUI::DefinePanel(element, parentPanel = null) {
 
 	return panel;
 }
-
-XMLUI.Open("example.xml");

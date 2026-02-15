@@ -15,6 +15,7 @@ const REF_HEIGHT = 480;
 		button = "Button"
 		tween = "Panel"
 		root = "Panel"
+		script = "Panel"
 	}
 
 	PropPriority = [
@@ -398,6 +399,25 @@ function XMLUI::PlayTween(panel, targetPanel) {
 	panel.AddTickSignal(0.016);
 }
 
+function XMLUI::ExecuteScript(xmlElement) {
+	if (xmlElement == null) return;
+	if ("executed" in xmlElement.metadata) return;
+	xmlElement.metadata.executed <- true;
+
+	local scriptContent = xmlElement.innerText;
+
+	if (scriptContent.len() == 0) return;
+
+	local func = compilestring(scriptContent);
+
+	if (!func) {
+		LogError("Error loading script: " + err);
+		return;
+	}
+
+	func.bindenv(xmlElement.parent)();
+}
+
 function XMLUI::PerformLayout(panel) {
 	local xmlElement = GetPanelXMLElement(panel);
 	if (xmlElement == null) return;
@@ -407,6 +427,9 @@ function XMLUI::PerformLayout(panel) {
 	switch (xmlElement.type) {
 		case "tween": 
 			return PlayTween(panel, panel.GetParent());
+		
+		case "script":
+			return ExecuteScript(xmlElement);
 
 		default: {
 			foreach (childPanel in GetPanelChildren(panel)) PerformLayout(childPanel);

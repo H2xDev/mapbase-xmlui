@@ -2,6 +2,8 @@
 
 Zero-dependency XML-based VGUI wrapper for Mapbase for creating complex UI elements with ease. Partially inspired by web development.
 
+[Demo](https://www.youtube.com/watch?v=RgFboa1jz_4)
+
 ## How to use
 
 1. Create a folder in `scripts/vscripts` called `xmlui` and place files from this repository there.

@@ -5,6 +5,9 @@ local ElementMappings = {};
 
 local CUBIC_BEZIER_REGEX = regexp("cubic-bezier\\((?:\\s+)?([\\d\\.\\-]+)(?:\\s+)?,(?:\\s+)?([\\d\\.\\-]+)(?:\\s+)?,(?:\\s+)?([\\d\\.\\-]+)(?:\\s+)?,(?:\\s+)?([\\d\\.\\-]+)(?:\\s+)?\\)")
 
+const REF_WIDTH = 640;
+const REF_HEIGHT = 480;
+
 ::XMLUI <- {
 	Mappings = {
 		panel = "Panel"
@@ -23,14 +26,15 @@ local CUBIC_BEZIER_REGEX = regexp("cubic-bezier\\((?:\\s+)?([\\d\\.\\-]+)(?:\\s+
 		"height",
 		"x",
 		"y", 
-	]
+	],
 }
 
 function XMLUI::Open(filename) {
 	local tree = XML.Open(filename);
 
-	// XML.LogTable(tree);
-	local rootPanel = DefinePanel(tree)
+	XML.LogWarning("XMLUI is in early development stage, expect some errors and crashes. Report them to the developer with steps to reproduce.");
+
+	local rootPanel = ComposePanels(tree)
 }
 
 function XMLUI::SafeGet(table, key, d = null) {
@@ -93,8 +97,8 @@ function XMLUI::GetPanelProperty(panel, prop) {
 		case "x": return !isRoot ? panel.GetXPos() : 0;
 		case "y": return !isRoot ? panel.GetYPos() : 0;
 
-		case "width": return !isRoot ? panel.GetWide() : XRES(640);
-		case "height": return !isRoot ? panel.GetTall() : YRES(480);
+		case "width": return !isRoot ? panel.GetWide() : XRES(REF_WIDTH);
+		case "height": return !isRoot ? panel.GetTall() : YRES(REF_HEIGHT);
 	}
 
 	return null;
@@ -103,10 +107,10 @@ function XMLUI::GetPanelProperty(panel, prop) {
 function XMLUI::GetBaseValue(panel, prop) {
 	switch (prop) {
 		case "x":
-		case "width": return panel.GetParent() ? panel.GetParent().GetWide() : XRES(640);
+		case "width": return panel.GetParent() ? panel.GetParent().GetWide() : XRES(REF_WIDTH);
 
 		case "y":
-		case "height": return panel.GetParent() ? panel.GetParent().GetTall() : YRES(480);
+		case "height": return panel.GetParent() ? panel.GetParent().GetTall() : YRES(REF_HEIGHT);
 
 		case "marginRight":
 		case "marginLeft": return panel.GetWide();
@@ -123,7 +127,7 @@ function XMLUI::ParseNumber(value, baseValue = null) {
 	if (value == null) return 0.0;
 
 	if (typeof value == "string" && value.slice(-1) == "%") {
-		value = XML.Replace(value, "%", "").tofloat() / 100;
+		value = XML.Replace(value, "%", "").tofloat() / 100.0;
 		return baseValue * value;
 	}
 
@@ -250,6 +254,7 @@ function XMLUI::GetBezierFunction(rawString) {
 		local guessForT = intervalStart + dist * kSampleStepSize;
 
 		local initialSlope = GetSlope(guessForT, mX1, mX2);
+
 		if (initialSlope >= 0.001) {
 			for (local i = 0; i < 4; ++i) {
 				local currentSlope = GetSlope(guessForT, mX1, mX2);
@@ -299,88 +304,89 @@ function XMLUI::EaseValue(progress, easing = "linear") {
 	return progress;
 }
 
-function XMLUI::IsTweenValid(element) {
-	if (element.type != "tween") return false;
+function XMLUI::IsTweenValid(xmlElement) {
+	if (xmlElement == null) return false;
 
-	local props = element.props;
+	if (xmlElement.type != "tween") return false;
 
-	if ("played" in element.metadata) {
+	local props = xmlElement.props;
+
+	if ("played" in xmlElement.metadata) {
 		return false;
 	}
 
 	if ("duration" in props == false) {
-		printl("Tween panel missing duration property");
+		LogError("Tween panel missing duration property");
 		return false;
 	}
 
 	if ("prop" in props == false) {
-		printl("Tween panel missing prop property");
+		LogError("Tween panel missing prop property");
 		return false;
 	}
 
 	return true;
 }
 
-function XMLUI::PlayTween(panel, targetPanel, element, isChild = false) {
-	if (element.type != "tween") return;
+function XMLUI::GetPanelChildren(panel) {
+	local children = [];
+	panel.GetChildren(children);
+	return children;
+}
 
-	local props = element.props;
-	local metadata = element.metadata;
-	local targetElement = ElementMappings[targetPanel.GetName()];
+function XMLUI::PlayTween(panel, targetPanel) {
+	local tweenXMLElement = GetPanelXMLElement(panel);
+	local targetXMLElement = GetPanelXMLElement(targetPanel);
+	if (!IsTweenValid(tweenXMLElement)) return;
 
-	if (!IsTweenValid(element)) return;
+	tweenXMLElement.metadata.played <- true;
 
-	metadata.played <- true;
+	local duration = tweenXMLElement.props.duration.tofloat() / 1000.0;
+	local delay = SafeGet(tweenXMLElement.props, "delay", 0.0).tofloat() / 1000.0;
 
+	local propToTween = tweenXMLElement.props.prop;
+	local tweenValue = tweenXMLElement.props.to;
 
-	local time = props.duration.tofloat() / 1000.0;
-	local elapsed = 0.0;
-	local delay = "delay" in props ? props.delay.tofloat() / 1000.0 : 0.0;
+	local isPercentageValue = typeof tweenValue == "string" && tweenValue.slice(-1) == "%";
+	local startPropValue = propToTween in targetXMLElement.props
+		? ParseNumber(targetXMLElement.props[propToTween], GetBaseValue(targetPanel, propToTween))
+		: 0.0;
 
-	local isPercentageValue = typeof props.to == "string" && props.to.slice(-1) == "%";
-	local startPropValue = props.prop in targetElement.props
-		? ParseNumber(targetElement.props[props.prop], GetBaseValue(targetPanel, props.prop))
-		: 0;
-
-	local ease = "ease" in props ? props.ease : "linear";
+	local ease = SafeGet(tweenXMLElement.props, "ease", "linear");
 
 	if (startswith(ease, "cubic-bezier")) {
 		ease = GetBezierFunction(ease);
 	}
 
+	local elapsed = 0.0;
 	panel.SetCallback("OnTick", function() {
 		if (delay > 0) {
 			delay -= FrameTime();
 			return;
 		}
 
-		local timeProgress = min(elapsed / time, 1.0);
+		local timeProgress = min(elapsed / duration, 1.0);
 		local progress = EaseValue(timeProgress, ease);
 
-		local endPropValue = ParseNumber(props.to, GetBaseValue(targetPanel, props.prop));
+		local endPropValue = ParseNumber(tweenValue, GetBaseValue(targetPanel, propToTween));
 		local currentValue = startPropValue + (endPropValue - startPropValue) * progress;
 
 		if (isPercentageValue) {
-			local baseValue = GetBaseValue(targetPanel, props.prop);
+			local baseValue = GetBaseValue(targetPanel, propToTween);
+
 			currentValue = baseValue
-				? (currentValue / baseValue * 100).tofloat() + "%" 
+				? (currentValue / baseValue * 100.0).tofloat() + "%" 
 				: startPropValue;
 		}
 
-		targetElement.props[props.prop] <- currentValue;
+		targetXMLElement.props[propToTween] <- currentValue;
 
 		if (timeProgress >= 1.0) {
+			// NOTE: Reparent tween children to the target panel
+			// It will play automeatically on PerformLayout
+			foreach (child in GetPanelChildren(panel)) child.SetParent(targetPanel);
+
 			panel.RemoveTickSignal();
-
-			local childs = [];
-			panel.GetChildren(childs);
-
-			foreach (child in childs) {
-				// Reparent tween children to the target panel
-				// It will play automeatically on PerformLayout
-				child.SetParent(targetPanel);
-			}
-
 			panel.Destroy();
 		}
 
@@ -393,34 +399,24 @@ function XMLUI::PlayTween(panel, targetPanel, element, isChild = false) {
 }
 
 function XMLUI::PerformLayout(panel) {
-	if (panel == null) return;
-	local element = panel.GetName() in ElementMappings
-		? ElementMappings[panel.GetName()]
-		: null;
+	local xmlElement = GetPanelXMLElement(panel);
+	if (xmlElement == null) return;
 
-	if (element == null) return;
+	ApplyPropsToPanel(panel, xmlElement);
 
-	foreach (key, value in element.props) {
-		SetPanelProperty(panel, key, value);
-	}
+	switch (xmlElement.type) {
+		case "tween": 
+			return PlayTween(panel, panel.GetParent());
 
-	if (element.type != "tween") {
-		local arr = [];
-		panel.GetChildren(arr);
-
-		foreach (childPanel in arr) {
-			PerformLayout(childPanel);
-		}
-	}
-
-	if (element.type == "tween") {
-		PlayTween(panel, panel.GetParent(), element);
+		default: {
+			foreach (childPanel in GetPanelChildren(panel)) PerformLayout(childPanel);
+		} break;
 	}
 }
 
-function XMLUI::DefinePanel(element, parentPanel = null) {
-	if (element.type in Mappings == false) {
-		printl("Unknown element type: " + element.type);
+function XMLUI::ComposePanels(xmlElement, parentPanel = null) {
+	if (xmlElement.type in Mappings == false) {
+		LogError("Unknown xmlElementtype: " + xmlElement.type);
 		return;
 	}
 
@@ -429,20 +425,19 @@ function XMLUI::DefinePanel(element, parentPanel = null) {
 	}
 
 	local isRoot = parentPanel == vgui.GetRootPanel();
-	local type = Mappings[element.type];
-	local name = "name" in element.props ? element.props.name : element.type ;
-	local id = UniqueString("xml_panel_" + name);
-	local panel = vgui.CreatePanel(type, parentPanel, id);
+	local name = SafeGet(xmlElement.props, "name", xmlElement.type);
+	local panel = vgui.CreatePanel(Mappings[xmlElement.type], parentPanel, UniqueString("xml_panel_" + name));
+
 	panel.SetSize(0, 0);
 	panel.SetVisible(true);
 
-	element.metadata.panelId <- id;
+	xmlElement.metadata.panelId <- panel.GetName();
 
-	DefinedPanels[id] <- panel;
-	ElementMappings[id] <- element;
+	DefinedPanels[xmlElement.metadata.panelId] <- panel;
+	ElementMappings[xmlElement.metadata.panelId] <- xmlElement;
 
-	foreach (child in element.children) {
-		DefinePanel(child, panel);
+	foreach (xmlChild in xmlElement.children) {
+		ComposePanels(xmlChild, panel);
 	}
 
 	if ("SetCallback" in panel == false) return;
@@ -451,12 +446,41 @@ function XMLUI::DefinePanel(element, parentPanel = null) {
 
 	if (isRoot) {
 		panel.SetCallback("PerformLayout", function() {
-			if (isRoot) panel.SetSize(XRES(640), YRES(480));
+			if (isRoot) panel.SetSize(XRES(REF_WIDTH), YRES(REF_HEIGHT));
 
 			self.PerformLayout(panel);
 		});
+
 		panel.MakeReadyForUse();
 	}
 
 	return panel;
+}
+
+function XMLUI::LogError(...) {
+	local message = "";
+
+	foreach (part in vargv) {
+		message += part + " ";
+	}
+
+	if (message.len() > 0) {
+		error("XMLUI Error: " + message + "\n");
+	}
+}
+
+function XMLUI::ApplyPropsToPanel(panel, element) {
+	foreach (key, value in element.props) {
+		SetPanelProperty(panel, key, value);
+	}
+}
+
+function XMLUI::GetPanelXMLElement(panel) {
+	if (panel == null) return null;
+
+	if (panel.GetName() in ElementMappings) {
+		return ElementMappings[panel.GetName()];
+	}
+
+	return null;
 }

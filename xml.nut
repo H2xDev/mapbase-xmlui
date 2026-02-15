@@ -14,6 +14,12 @@
 	}
 }
 
+local TAG_OPEN_REGEX = regexp("<[\\w\\-]+(?:\\s+|\\n+)(?:[\\w\\d\\-]+=\".+\"(?:\\s+|\\n+)?)+/?>")
+local TAG_NAME_REGEX = regexp("<([a-zA-Z0-9_]+)");
+local TAG_PROPS_REGEX = regexp("(\\w+)=\"([^\"]+)\"");
+local TAG_CLOSE_REGEX = regexp("</[\\w\\-]+>");
+local COMMENT_REGEX = regexp("<!--(?:\\s+|\\n).+(?:\\s+|\\n)-->");
+
 function XML::Open(filename) {
 	local fileData = FileToString(filename) || "";
 	return Parse(fileData);
@@ -26,6 +32,7 @@ function XML::CreateElement(type) {
 		children = [],
 		props = {},
 		metadata = {}
+		innerText = "",
 	}
 
 	return element;
@@ -49,31 +56,99 @@ function XML::FindElementByType(element, type, deep = false) {
 	return null;
 }
 
+function XML::LogError(...) {
+	local message = "";
+
+	foreach (part in vargv) {
+		message += part + " ";
+	}
+
+	if (message.len() > 0) {
+		error("XML Warning: " + message + "\n");
+	}
+}
+
+function XML::LogWarning(...) {
+	local message = "";
+
+	foreach (part in vargv) {
+		message += part + " ";
+	}
+
+	if (message.len() > 0) {
+		error("XML Warning: " + message + "\n");
+	}
+}
+
+function XML::QuerySelector(element, selector) {
+	local isClass = (selector.len() > 0 && selector.slice(0, 1) == ".");
+	local isId = (selector.len() > 0 && selector.slice(0, 1) == "#");
+
+	if (typeof selector != "string") {
+		error("Selector must be a string");
+		return null;
+	}
+
+	foreach (child in element.children) {
+		local found = false;
+
+		if (isClass) {
+			if ("class" in child.props) {
+				local classList = split(child.props["class"], " ");
+				foreach (className in classList) {
+					if (className == selector.slice(1)) {
+						found = true;
+						break;
+					}
+				}
+			}
+		} else if (isId) {
+			if ("id" in child.props && child.props["id"] == selector.slice(1)) {
+				found = true;
+			}
+		} else {
+			// Tag name selector
+			if (child.type == selector) {
+				found = true;
+			}
+		}
+
+		if (found) return child;
+		
+		// Search deeper
+		local result = QuerySelector(child, selector);
+		if (result) return result;
+	}
+
+	return null;
+}
+
 function XML::AddChild(parent, child) {
 	child.parent = parent;
 	parent.children.append(child);
 }
 
-function XML::Replace(source, what, by, recursive = false) {
-  if (source.len() < what.len()) return source;
+function XML::Replace(source, what, by, replaceAll = false) {
+	if (source.len() < what.len()) return source;
+	
+	local idx = source.find(what);
+	if (idx == null) return source;
 
-  for (local i = 0; i <= source.len() - what.len(); i++) {
-    local a = source.slice(i, i + what.len());
+	if (!replaceAll) {
+		return source.slice(0, idx) + by + source.slice(idx + what.len());
+	}
 
-    if (a == what) {
-      if (!recursive) {
-        return source.slice(0, i)
-          + by
-          + source.slice(i + what.len());
-      }
+	local result = "";
+	local lastIdx = 0;
 
-      return source.slice(0, i)
-        + by
-        + Replace(source.slice(i + what.len()), what, by, recursive);
-    }
-  }
+	while (idx != null) {
+		result += source.slice(lastIdx, idx) + by;
+		lastIdx = idx + what.len();
+		idx = source.find(what, lastIdx);
+	}
 
-  return source;
+	result += source.slice(lastIdx);
+	return result;
 }
 
 function XML::PushError(message) {
@@ -81,33 +156,30 @@ function XML::PushError(message) {
 }
 
 function XML::ProcessTag(tagData, parent) {
-	local tagNameRegex = regexp("<([a-z]+)");
-	local captureData = tagNameRegex.capture(tagData);
-	if (!captureData)  {
+	local captureData = TAG_NAME_REGEX.capture(tagData);
+	if (!captureData) {
 		printl("Failed to parse tag: " + tagData);
-		return;
+		return parent;
 	}
 
 	local tagName = tagData.slice(captureData[1].begin, captureData[1].end);
 	local element = CreateElement(tagName);
 
-	AddChild(parent, element);
-
-	local propsRegex = regexp("(\\w+)=\"(.+)\"");
-	if (!captureData) return element;
+	if (parent) {
+		AddChild(parent, element);
+	}
 
 	local lastCaptured = 0;
+	local propsCapture = TAG_PROPS_REGEX.capture(tagData);
 
-	captureData = propsRegex.capture(tagData);
-
-	while (captureData) {
-		local propName = tagData.slice(captureData[1].begin, captureData[1].end);
-		local propValue = tagData.slice(captureData[2].begin, captureData[2].end);
+	while (propsCapture) {
+		local propName = tagData.slice(propsCapture[1].begin, propsCapture[1].end);
+		local propValue = tagData.slice(propsCapture[2].begin, propsCapture[2].end);
 
 		element.props[propName] <- propValue;
 
-		lastCaptured = captureData[0].end;
-		captureData = propsRegex.capture(tagData, lastCaptured);
+		lastCaptured = propsCapture[0].end;
+		propsCapture = TAG_PROPS_REGEX.capture(tagData, lastCaptured);
 	}
 
 	return element;
@@ -172,97 +244,48 @@ function XML::LogTable(table, indent = 0, processed = []) {
 }
 
 function XML::Parse(fileData) {
-	fileData = Replace(fileData, "\n", "", true);
+	local data = "";
+	local currentTag = CreateElement("root");
 
-	local rootElement = CreateElement("root");
+	foreach (char in fileData) {
+		char = format("%c", char);
 
-	local isInComment = false;
-	local isTagOpen = false;
-
-	local isOpenTag = false;
-	local isCloseTag = false;
-	local isCommentTag = false;
-
-	local currentTag = rootElement;
-	local tagData = "";
-	local prevChar = "";
-	local tagContent = "";
-
-	for (local i = 0; i < fileData.len(); i++) {
-		local char = format("%c", fileData[i]);
-		local prevChar = i > 0 
-			? format("%c", fileData[i - 1])
-			: "";
-
-		if (isInComment) {
-			tagData += char;
-		}
-
-		if (tagData.len() > 3 && tagData.slice(-4) == "<!--") {
-			isInComment = true;
-			isTagOpen = false;
-			isCloseTag = false;
-			isOpenTag = false;
-			tagData += char;
-			continue;
-		}
-
-		if (tagData.len() > 2 && tagData.slice(-3) == "-->") {
-			isInComment = false;
-			printl("Comment: " + tagData);
-			tagData = "";
-			continue;
-		}
-
-		if (isInComment) continue;
-
-		if (char == "<") {
-			if (isTagOpen) {
-				return Errors.UNEXPECTED_TAG_OPEN;
-			}
-
-			isTagOpen = true;
-			tagData += char;
-			continue;
-		}
-
-
-		if (char != "/" && prevChar == "<") {
-			isOpenTag = true;
-		} else if (char == "/" && prevChar == "<") {
-			isCloseTag = true;
-		}
+		data += char;
 
 		if (char == ">") {
-			if (!isTagOpen) {
-				return Errors.UNEXPECTED_TAG_CLOSE;
+			local commentCapture = COMMENT_REGEX.capture(data);
+			local tagCapture = TAG_OPEN_REGEX.capture(data);
+			local tagCloseCapture = TAG_CLOSE_REGEX.capture(data);
+
+			local isCaptured = commentCapture || tagCapture || tagCloseCapture;
+
+			if (commentCapture) {
+				// Comment, ignore content
+			} else if (tagCapture) {
+				local tagStr = data.slice(tagCapture[0].begin, tagCapture[0].end);
+				local rawText = data.slice(0, tagCapture[0].begin);
+
+				currentTag.innerText += rawText;
+				currentTag = ProcessTag(tagStr, currentTag);
+
+				local isSelfClosing = endswith(tagStr, "/>");
+				if (isSelfClosing && currentTag.parent) {
+					currentTag = currentTag.parent;
+				}
+			} else if (tagCloseCapture) {
+				currentTag.innerText += data.slice(0, tagCloseCapture[0].begin);
+				currentTag.innerText = strip(currentTag.innerText);
+
+				if (currentTag.parent) {
+					currentTag = currentTag.parent;
+				} else {
+					LogWarning("Unexpected closing tag without parent: " + data.slice(tagCloseCapture[0].begin, tagCloseCapture[0].end));
+				}
 			}
 
-			tagData += char;
-
-			if (isOpenTag) {
-				currentTag = ProcessTag(tagData, currentTag);
-			}
-
-			if (isCloseTag || prevChar == "/") {
-				currentTag = currentTag.parent;
-			}
-
-			tagData = "";
-			isTagOpen = false;
-			isOpenTag = false;
-			isCloseTag = false;
-			continue;
+			data = isCaptured ? "" : data;
 		}
-
-		if (char == "/" && prevChar == "<") {
-			isCloseTag = true;
-			tagData += char;
-			continue;
-		}
-
-		tagData += char;
 	}
 
-	return rootElement;
+	return currentTag;
 }

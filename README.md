@@ -27,6 +27,11 @@ if (CLIENT_DLL) {
 		<tween prop="y" to="100%" duration="1000" ease="cubic-bezier(1,0,0,1)"></tween>
 		<tween prop="marginTop" to="-100%" duration="1000" ease="cubic-bezier(1,0,0,1)"></tween>
 	</tween>
+
+    <script>
+        // Modify the panel's background color
+        props.bgColor = "#f00";
+    </script>
 </panel>
 ```
 
@@ -43,6 +48,7 @@ if (CLIENT_DLL) {
 |`<panel>`|Default element. Can be used as a container for other elements.|
 |`<label>`|A label element for displaying text.|
 |`<tween>`|A tween element for animating properties of its parent element. Must be a child of another element which should be animated. Can also be a child of another tween element for chaining animations.|
+|`<script>`|A script element for executing custom Squirrel code. Must be a child of another element. The code will be executed when the panel is rendered.|
 
 ## Supported attributes
 

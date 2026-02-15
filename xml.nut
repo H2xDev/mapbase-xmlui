@@ -14,7 +14,8 @@
 	}
 }
 
-local TAG_OPEN_REGEX = regexp("<[\\w\\-]+(?:\\s+|\\n+)(?:[\\w\\d\\-]+=\".+\"(?:\\s+|\\n+)?)+/?>")
+local TAG_OPEN_REGEX = regexp("<[\\w\\-]+(?:\\s+|\\n+)?(?:(?:[\\w\\d\\-]+=\".+\"(?:\\s+|\\n+)?)+)?\\/?>")
+// local TAG_OPEN_REGEX = regexp("<[\w\-]+(?:\s+|\n+)(?:[\w\d\-]+=\".+\"(?:\s+|\n+)?)+/?>")
 local TAG_NAME_REGEX = regexp("<([a-zA-Z0-9_]+)");
 local TAG_PROPS_REGEX = regexp("(\\w+)=\"([^\"]+)\"");
 local TAG_CLOSE_REGEX = regexp("</[\\w\\-]+>");
@@ -157,10 +158,6 @@ function XML::PushError(message) {
 
 function XML::ProcessTag(tagData, parent) {
 	local captureData = TAG_NAME_REGEX.capture(tagData);
-	if (!captureData) {
-		printl("Failed to parse tag: " + tagData);
-		return parent;
-	}
 
 	local tagName = tagData.slice(captureData[1].begin, captureData[1].end);
 	local element = CreateElement(tagName);
@@ -261,7 +258,9 @@ function XML::Parse(fileData) {
 
 			if (commentCapture) {
 				// Comment, ignore content
+				printl("Comment found: " + data.slice(commentCapture[0].begin, commentCapture[0].end));
 			} else if (tagCapture) {
+				printl("Tag found: " + data.slice(tagCapture[0].begin, tagCapture[0].end));
 				local tagStr = data.slice(tagCapture[0].begin, tagCapture[0].end);
 				local rawText = data.slice(0, tagCapture[0].begin);
 
@@ -273,8 +272,10 @@ function XML::Parse(fileData) {
 					currentTag = currentTag.parent;
 				}
 			} else if (tagCloseCapture) {
+				local tagStr = data.slice(tagCloseCapture[0].begin, tagCloseCapture[0].end);
 				currentTag.innerText += data.slice(0, tagCloseCapture[0].begin);
 				currentTag.innerText = strip(currentTag.innerText);
+				printl("Closing tag found: " + tagStr);
 
 				if (currentTag.parent) {
 					currentTag = currentTag.parent;
@@ -289,3 +290,100 @@ function XML::Parse(fileData) {
 
 	return currentTag;
 }
+
+// function XML::Parse(fileData) {
+// 	// Remove newlines to simplify parsing structure
+// 	fileData = Replace(fileData, "\n", "", true);
+// 	fileData = Replace(fileData, "\r", "", true);
+// 	fileData = Replace(fileData, "\t", "", true);
+// 
+// 	local rootElement = CreateElement("root");
+// 
+// 	local isInComment = false;
+// 	local isTagOpen = false;
+// 
+// 	local isOpenTag = false;
+// 	local isCloseTag = false;
+// 
+// 	local currentTag = rootElement;
+// 	local tagData = "";
+// 	
+// 	// Pre-calculate length for loop
+// 	local len = fileData.len();
+// 
+// 	for (local i = 0; i < len; i++) {
+// 		local char = fileData[i]; // get integer code
+// 		local charStr = format("%c", char); // convert to string
+// 
+// 		if (isInComment) {
+// 			if (tagData.len() > 2 && tagData.slice(-2) == "--" && charStr == ">") {
+// 				isInComment = false;
+// 				// printl("Comment: " + tagData + ">");
+// 				tagData = "";
+// 			} else {
+// 				tagData += charStr;
+// 			}
+// 			continue;
+// 		}
+// 
+// 		if (charStr == "<") {
+// 			if (isTagOpen) {
+// 				// return Errors.UNEXPECTED_TAG_OPEN;
+// 				// Instead of erroring, reset and assume previous was malformed text
+// 				isTagOpen = false;
+// 				tagData = "";
+// 			}
+// 			
+// 			// Check for comment start
+// 			if (i + 3 < len && fileData.slice(i, i + 4) == "<!--") {
+// 				isInComment = true;
+// 				tagData = "<!--";
+// 				i += 3; // Skip "!--"
+// 				continue;
+// 			}
+// 
+// 			isTagOpen = true;
+// 			tagData = charStr;
+// 			continue;
+// 		}
+// 
+// 		if (charStr == ">") {
+// 			if (!isTagOpen) {
+// 				// Ignore loose '>' if not inside a tag (e.g. text content, though this parser ignores text content)
+// 				continue;
+// 			}
+// 
+// 			tagData += charStr;
+// 
+// 			// Check if it's a self-closing tag or closing tag
+// 			// tagData contains the full tag including < and >
+// 			// e.g. <tag> or </tag> or <tag />
+// 			
+// 			local isSelfClosing = (tagData.len() > 3 && tagData.slice(tagData.len()-2, tagData.len()-1) == "/");
+// 			local isClosing = (tagData.len() > 2 && tagData.slice(1, 2) == "/");
+// 
+// 			if (isClosing) {
+// 				// </tag>
+// 				if (currentTag.parent) {
+// 					currentTag = currentTag.parent;
+// 				}
+// 			} else {
+// 				// <tag> or <tag />
+// 				local newElement = ProcessTag(tagData, currentTag);
+// 				if (!isSelfClosing) {
+// 					currentTag = newElement;
+// 				}
+// 			}
+// 
+// 			tagData = "";
+// 			isTagOpen = false;
+// 			continue;
+// 		}
+// 
+// 		if (isTagOpen) {
+// 			tagData += charStr;
+// 		}
+// 	}
+// 
+// 	return rootElement;
+// }

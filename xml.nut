@@ -15,7 +15,6 @@
 }
 
 local TAG_OPEN_REGEX = regexp("<[\\w\\-]+(?:\\s+|\\n+)?(?:(?:[\\w\\d\\-]+=\".+\"(?:\\s+|\\n+)?)+)?\\/?>")
-// local TAG_OPEN_REGEX = regexp("<[\w\-]+(?:\s+|\n+)(?:[\w\d\-]+=\".+\"(?:\s+|\n+)?)+/?>")
 local TAG_NAME_REGEX = regexp("<([a-zA-Z0-9_]+)");
 local TAG_PROPS_REGEX = regexp("(\\w+)=\"([^\"]+)\"");
 local TAG_CLOSE_REGEX = regexp("</[\\w\\-]+>");
@@ -258,9 +257,7 @@ function XML::Parse(fileData) {
 
 			if (commentCapture) {
 				// Comment, ignore content
-				printl("Comment found: " + data.slice(commentCapture[0].begin, commentCapture[0].end));
 			} else if (tagCapture) {
-				printl("Tag found: " + data.slice(tagCapture[0].begin, tagCapture[0].end));
 				local tagStr = data.slice(tagCapture[0].begin, tagCapture[0].end);
 				local rawText = data.slice(0, tagCapture[0].begin);
 
@@ -275,7 +272,6 @@ function XML::Parse(fileData) {
 				local tagStr = data.slice(tagCloseCapture[0].begin, tagCloseCapture[0].end);
 				currentTag.innerText += data.slice(0, tagCloseCapture[0].begin);
 				currentTag.innerText = strip(currentTag.innerText);
-				printl("Closing tag found: " + tagStr);
 
 				if (currentTag.parent) {
 					currentTag = currentTag.parent;
